@@ -2534,10 +2534,8 @@ void smart_creation::sendGasAlertToAllEmployees()
     }
 
     // Message d'alerte de gaz
-    QString alertMessage = "🚨 ALERTE URGENTE! 🚨\n"
-                          "Un capteur de gaz a détecté un danger dans les locaux de Smart Creation.\n"
-                          "Veuillez évacuer immédiatement les lieux et contacter les secours!\n"
-                          "⚠️ NE PAS RETOURNER AVANT L'AUTORISATION ⚠️";
+    // Message court (1 segment SMS = 70 chars max avec emoji) pour éviter échec sur compte trial
+    QString alertMessage = "ALERTE GAZ! Evacuez Smart Creation immediatement. Danger!";
 
     int totalEmployees = 0;
     int smsSent = 0;
