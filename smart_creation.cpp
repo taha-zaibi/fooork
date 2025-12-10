@@ -2159,9 +2159,9 @@ void smart_creation::actualiserAffichage()
     QSqlQuery query;
     // Requête avec LEFT JOIN pour inclure l'ID influenceur via PRODUIRE
     query.prepare("SELECT V.ID_VID, V.NOM_VID, V.CATEGORIE_VID, V.NB_VUE_VID, V.NB_LIKE_VID, "
-                  "TO_CHAR(V.DATE_VD, 'DD/MM/YYYY'), V.COUT_VID, P.ID_INFL"
+                  "TO_CHAR(V.DATE_VD, 'DD/MM/YYYY'), V.COUT_VID, P.ID_INFL "
                   "FROM VIDEO V "
-                  "LEFT JOIN PRODUIRE P ON V.ID_VID = P.ID_VD"
+                  "LEFT JOIN PRODUIRE P ON V.ID_VID = P.ID_VD "
                   "ORDER BY V.ID_VID");
 
     if(!query.exec())
@@ -2201,15 +2201,15 @@ void smart_creation::rechercher(QString critere)
     // Recherche multi-critères intelligente : cherche dans tous les champs
     // ID vidéo, Nom vidéo, Catégorie, Date, Coût, ID influenceur
     query.prepare("SELECT V.ID_VID, V.NOM_VID, V.CATEGORIE_VID, V.NB_VUE_VID, V.NB_LIKE_VID, "
-                  "TO_CHAR(V.DATE_VD, 'DD/MM/YYYY'), V.COUT_VID, P.ID_INFL"
+                  "TO_CHAR(V.DATE_VD, 'DD/MM/YYYY'), V.COUT_VID, P.ID_INFL "
                   "FROM VIDEO V "
-                  "LEFT JOIN PRODUIRE P ON V.ID_VID = P.ID_VD"
+                  "LEFT JOIN PRODUIRE P ON V.ID_VID = P.ID_VD "
                   "WHERE UPPER(V.NOM_VID) LIKE :critere "           // Recherche par nom
                   "OR TO_CHAR(V.ID_VID) LIKE :critere "             // Recherche par ID vidéo
                   "OR UPPER(V.CATEGORIE_VID) LIKE :critere "        // Recherche par catégorie
                   "OR TO_CHAR(V.DATE_VD, 'DD/MM/YYYY') LIKE :critere " // Recherche par date
                   "OR TO_CHAR(V.COUT_VID) LIKE :critere "           // Recherche par coût
-                  "OR TO_CHAR(P.ID_INF) LIKE :critere "             // Recherche par ID influenceur
+                  "OR TO_CHAR(P.ID_INFL) LIKE :critere "            // Recherche par ID influenceur
                   "ORDER BY V.ID_VID");
 
     query.bindValue(":critere", "%" + critere.toUpper() + "%");
