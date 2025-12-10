@@ -108,6 +108,36 @@ smart_creation::smart_creation(QWidget *parent)
 
 
      ui->tableView_2->setModel(GP.afficher());
+
+    // ===== BOUTON TEST ALERTE GAZ =====
+    // Création d'un bouton de test pour l'alerte de gaz
+    QPushButton *btnTestGasAlert = new QPushButton("🚨 TEST ALERTE GAZ", this);
+    btnTestGasAlert->setObjectName("btn_test_gas_alert");
+    btnTestGasAlert->setGeometry(1400, 10, 180, 50); // Position: en haut à droite
+    btnTestGasAlert->setStyleSheet(
+        "QPushButton {"
+        "   background-color: #ff4444;"
+        "   color: white;"
+        "   font-weight: bold;"
+        "   font-size: 12px;"
+        "   border-radius: 8px;"
+        "   padding: 5px;"
+        "}"
+        "QPushButton:hover {"
+        "   background-color: #cc0000;"
+        "}"
+        "QPushButton:pressed {"
+        "   background-color: #990000;"
+        "}"
+    );
+    btnTestGasAlert->setCursor(Qt::PointingHandCursor);
+    btnTestGasAlert->setToolTip("Cliquez pour tester l'envoi d'alertes SMS à tous les employés");
+
+    // Connecter le bouton à la fonction de test
+    connect(btnTestGasAlert, &QPushButton::clicked,
+            this, &smart_creation::on_btn_test_gas_alert_clicked);
+
+    qDebug() << "✅ Bouton de test d'alerte gaz créé et connecté!";
 }
 
 smart_creation::~smart_creation()
