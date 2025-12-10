@@ -72,6 +72,7 @@ smart_creation::smart_creation(QWidget *parent)
             this, &smart_creation::onTwilioReplyFinished);
 
     // Arduino Gas Sensor System
+    loadArduinoTwilioConfig();  // Charger les credentials Twilio pour Arduino
     setupArduinoConnection();
 
     // Initialisation pour matériel
@@ -2293,6 +2294,89 @@ void smart_creation::on_btn_predicteur_clicked()
 // ============= ARDUINO GAS SENSOR ALERT SYSTEM =============
 
 /**
+ * Charge les credentials Twilio pour Arduino depuis le fichier de configuration
+ * Le fichier arduino_twilio_config.txt doit être dans le même dossier que l'exécutable
+ */
+void smart_creation::loadArduinoTwilioConfig()
+{
+    qDebug() << "=== CHARGEMENT CONFIGURATION TWILIO ARDUINO ===";
+
+    // Chemin du fichier de configuration
+    QString configPath = QCoreApplication::applicationDirPath() + "/arduino_twilio_config.txt";
+
+    QFile configFile(configPath);
+
+    if (!configFile.exists()) {
+        qDebug() << "⚠️ Fichier de configuration non trouvé:" << configPath;
+        qDebug() << "   Création d'un fichier template...";
+
+        // Créer un fichier template
+        if (configFile.open(QIODevice::WriteOnly | QIODevice::Text)) {
+            QTextStream out(&configFile);
+            out << "# Configuration Twilio pour Arduino Gas Alert System\n";
+            out << "# NE PAS PARTAGER CE FICHIER !\n";
+            out << "\n";
+            out << "ACCOUNT_SID=VOTRE_ACCOUNT_SID_ICI\n";
+            out << "AUTH_TOKEN=VOTRE_AUTH_TOKEN_ICI\n";
+            out << "MESSAGING_SERVICE_SID=VOTRE_MESSAGING_SERVICE_SID_ICI\n";
+            configFile.close();
+            qDebug() << "✅ Fichier template créé. Veuillez le remplir avec vos credentials Twilio.";
+        }
+        return;
+    }
+
+    if (!configFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        qDebug() << "❌ Impossible d'ouvrir le fichier de configuration!";
+        return;
+    }
+
+    // Lire le fichier ligne par ligne
+    QTextStream in(&configFile);
+    while (!in.atEnd()) {
+        QString line = in.readLine().trimmed();
+
+        // Ignorer les commentaires et lignes vides
+        if (line.isEmpty() || line.startsWith("#")) {
+            continue;
+        }
+
+        // Parser les paires clé=valeur
+        QStringList parts = line.split("=");
+        if (parts.size() == 2) {
+            QString key = parts[0].trimmed();
+            QString value = parts[1].trimmed();
+
+            if (key == "ACCOUNT_SID") {
+                arduino_twilio_account_sid = value;
+                qDebug() << "✅ Account SID chargé:" << value;
+            } else if (key == "AUTH_TOKEN") {
+                arduino_twilio_auth_token = value;
+                qDebug() << "✅ Auth Token chargé:" << value.left(8) + "..."; // Masquer le token
+            } else if (key == "MESSAGING_SERVICE_SID") {
+                arduino_twilio_messaging_service_sid = value;
+                qDebug() << "✅ Messaging Service SID chargé:" << value;
+            }
+        }
+    }
+
+    configFile.close();
+
+    // Vérifier que tout est chargé
+    if (arduino_twilio_account_sid.isEmpty() ||
+        arduino_twilio_auth_token.isEmpty() ||
+        arduino_twilio_messaging_service_sid.isEmpty()) {
+        qDebug() << "⚠️ ATTENTION: Certains credentials Twilio Arduino sont manquants!";
+        qDebug() << "   Account SID:" << (arduino_twilio_account_sid.isEmpty() ? "❌ MANQUANT" : "✅ OK");
+        qDebug() << "   Auth Token:" << (arduino_twilio_auth_token.isEmpty() ? "❌ MANQUANT" : "✅ OK");
+        qDebug() << "   Messaging Service SID:" << (arduino_twilio_messaging_service_sid.isEmpty() ? "❌ MANQUANT" : "✅ OK");
+    } else {
+        qDebug() << "✅ Tous les credentials Twilio Arduino sont chargés avec succès!";
+    }
+
+    qDebug() << "=== FIN CHARGEMENT CONFIGURATION ===";
+}
+
+/**
  * Configuration de la connexion Arduino
  * Recherche et se connecte au port série Arduino
  */
@@ -2365,29 +2449,34 @@ void smart_creation::onSerialDataReceived()
 }
 
 /**
- * Fonction d'envoi de SMS (version générique)
+ * Fonction d'envoi de SMS pour Arduino Gas Alert
+ * Utilise les credentials Twilio dédiés et Messaging Service SID
  * @param phoneNumber - Numéro de téléphone au format international (+216...)
  * @param message - Message à envoyer
  */
 void smart_creation::sendSMS(const QString &phoneNumber, const QString &message)
 {
-    qDebug() << "📱 Envoi SMS à:" << phoneNumber;
+    qDebug() << "📱 Envoi SMS Arduino Gas Alert à:" << phoneNumber;
 
-    // Préparer l'URL Twilio
-    QUrl url(QString("https://api.twilio.com/2010-04-01/Accounts/%1/Messages.json").arg(twilio_account_sid));
+    // Préparer l'URL Twilio avec le nouveau Account SID
+    QUrl url(QString("https://api.twilio.com/2010-04-01/Accounts/%1/Messages.json")
+             .arg(arduino_twilio_account_sid));
 
-    // Préparer les données POST
+    // Préparer les données POST avec MessagingServiceSid au lieu de From
     QUrlQuery postData;
     postData.addQueryItem("To", phoneNumber);
-    postData.addQueryItem("From", twilio_from_number);
+    postData.addQueryItem("MessagingServiceSid", arduino_twilio_messaging_service_sid);
     postData.addQueryItem("Body", message);
 
-    // Préparer la requête
+    // Préparer la requête avec les nouveaux credentials Arduino
     QNetworkRequest request(url);
-    QString auth = QString("%1:%2").arg(twilio_account_sid).arg(twilio_auth_token);
+    QString auth = QString("%1:%2").arg(arduino_twilio_account_sid).arg(arduino_twilio_auth_token);
     QByteArray authData = auth.toUtf8().toBase64();
     request.setRawHeader("Authorization", "Basic " + authData);
     request.setHeader(QNetworkRequest::ContentTypeHeader, "application/x-www-form-urlencoded");
+
+    qDebug() << "🔑 Utilisation Account SID:" << arduino_twilio_account_sid;
+    qDebug() << "📞 Messaging Service SID:" << arduino_twilio_messaging_service_sid;
 
     // Envoyer la requête
     networkManager->post(request, postData.toString(QUrl::FullyEncoded).toUtf8());
