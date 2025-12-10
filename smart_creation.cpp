@@ -2409,42 +2409,104 @@ void smart_creation::setupArduinoConnection()
 
     arduinoPort = new QSerialPort(this);
 
-    // Rechercher le port Arduino (généralement COM3, COM4 sur Windows ou /dev/ttyUSB0, /dev/ttyACM0 sur Linux)
+    // Rechercher tous les ports série disponibles
     const auto ports = QSerialPortInfo::availablePorts();
 
-    qDebug() << "Ports série disponibles:";
+    if (ports.isEmpty()) {
+        qDebug() << "❌ AUCUN PORT SERIE DETECTE!";
+        qDebug() << "   Verifiez que l'Arduino est branche via USB";
+        return;
+    }
+
+    qDebug() << "Nombre de ports serie trouves:" << ports.size();
+    qDebug() << "Ports serie disponibles:";
+
+    // Afficher tous les ports pour debug
     for (const QSerialPortInfo &portInfo : ports) {
-        qDebug() << "  - Port:" << portInfo.portName()
-                 << "Description:" << portInfo.description()
-                 << "Manufacturer:" << portInfo.manufacturer();
+        qDebug() << "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━";
+        qDebug() << "  Port:" << portInfo.portName();
+        qDebug() << "  Description:" << portInfo.description();
+        qDebug() << "  Fabricant:" << portInfo.manufacturer();
+        qDebug() << "  VID:PID:" << QString::number(portInfo.vendorIdentifier(), 16)
+                 << ":" << QString::number(portInfo.productIdentifier(), 16);
+    }
+    qDebug() << "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━";
 
-        // Détecter Arduino (généralement contient "Arduino" dans la description)
+    // Strategie de detection amelioree - essayer plusieurs methodes
+    QSerialPortInfo selectedPort;
+    bool portFound = false;
+
+    // Methode 1: Chercher "Arduino" dans description ou fabricant
+    for (const QSerialPortInfo &portInfo : ports) {
         if (portInfo.description().contains("Arduino", Qt::CaseInsensitive) ||
-            portInfo.manufacturer().contains("Arduino", Qt::CaseInsensitive) ||
-            portInfo.portName().contains("USB", Qt::CaseInsensitive) ||
-            portInfo.portName().contains("ACM", Qt::CaseInsensitive))
-        {
-            qDebug() << "✅ Arduino détecté sur:" << portInfo.portName();
+            portInfo.manufacturer().contains("Arduino", Qt::CaseInsensitive)) {
+            qDebug() << "Arduino trouve (methode 1):" << portInfo.portName();
+            selectedPort = portInfo;
+            portFound = true;
+            break;
+        }
+    }
 
-            arduinoPort->setPortName(portInfo.portName());
-            arduinoPort->setBaudRate(QSerialPort::Baud9600);
-            arduinoPort->setDataBits(QSerialPort::Data8);
-            arduinoPort->setParity(QSerialPort::NoParity);
-            arduinoPort->setStopBits(QSerialPort::OneStop);
-            arduinoPort->setFlowControl(QSerialPort::NoFlowControl);
-
-            if (arduinoPort->open(QIODevice::ReadWrite)) {
-                qDebug() << "✅ Port Arduino ouvert avec succès!";
-                connect(arduinoPort, &QSerialPort::readyRead, this, &smart_creation::onSerialDataReceived);
-                return;
-            } else {
-                qDebug() << "❌ Erreur d'ouverture du port:" << arduinoPort->errorString();
+    // Methode 2: Chercher par VID/PID Arduino (2341 = Arduino, 1A86 = CH340)
+    if (!portFound) {
+        for (const QSerialPortInfo &portInfo : ports) {
+            if (portInfo.vendorIdentifier() == 0x2341 ||  // Arduino officiel
+                portInfo.vendorIdentifier() == 0x1A86 ||  // CH340 (clones Arduino)
+                portInfo.vendorIdentifier() == 0x0403) {  // FTDI (certains Arduino)
+                qDebug() << "Arduino trouve (methode 2 - VID):" << portInfo.portName();
+                selectedPort = portInfo;
+                portFound = true;
+                break;
             }
         }
     }
 
-    qDebug() << "⚠️ Aucun Arduino détecté. Connexion automatique désactivée.";
-    qDebug() << "   Vous pouvez toujours tester avec le bouton manuel.";
+    // Methode 3: Chercher "USB" ou "ACM" dans le nom du port (Linux/Mac)
+    if (!portFound) {
+        for (const QSerialPortInfo &portInfo : ports) {
+            if (portInfo.portName().contains("USB", Qt::CaseInsensitive) ||
+                portInfo.portName().contains("ACM", Qt::CaseInsensitive)) {
+                qDebug() << "Port USB trouve (methode 3):" << portInfo.portName();
+                selectedPort = portInfo;
+                portFound = true;
+                break;
+            }
+        }
+    }
+
+    // Methode 4: Prendre le premier port disponible (dernier recours)
+    if (!portFound && !ports.isEmpty()) {
+        qDebug() << "Aucun Arduino identifie, essai avec le premier port disponible";
+        selectedPort = ports.first();
+        portFound = true;
+    }
+
+    // Tenter d'ouvrir le port selectionne
+    if (portFound) {
+        qDebug() << "";
+        qDebug() << "TENTATIVE DE CONNEXION AU PORT:" << selectedPort.portName();
+
+        arduinoPort->setPortName(selectedPort.portName());
+        arduinoPort->setBaudRate(QSerialPort::Baud9600);
+        arduinoPort->setDataBits(QSerialPort::Data8);
+        arduinoPort->setParity(QSerialPort::NoParity);
+        arduinoPort->setStopBits(QSerialPort::OneStop);
+        arduinoPort->setFlowControl(QSerialPort::NoFlowControl);
+
+        if (arduinoPort->open(QIODevice::ReadWrite)) {
+            qDebug() << "PORT ARDUINO OUVERT AVEC SUCCES!";
+            qDebug() << "En ecoute des messages Arduino...";
+            connect(arduinoPort, &QSerialPort::readyRead, this, &smart_creation::onSerialDataReceived);
+            return;
+        } else {
+            qDebug() << "ECHEC D'OUVERTURE DU PORT!";
+            qDebug() << "Erreur:" << arduinoPort->errorString();
+            qDebug() << "SOLUTION: Fermez Arduino IDE (Moniteur Serie) si ouvert!";
+        }
+    }
+
+    qDebug() << "Connexion Arduino echouee.";
+    qDebug() << "Vous pouvez toujours tester avec le bouton manuel.";
 }
 
 /**
