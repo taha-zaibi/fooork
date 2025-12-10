@@ -71,8 +71,8 @@ smart_creation::smart_creation(QWidget *parent)
     connect(networkManager, &QNetworkAccessManager::finished,
             this, &smart_creation::onTwilioReplyFinished);
 
-    // Arduino Gas Sensor System
-    loadArduinoTwilioConfig();  // Charger les credentials Twilio pour Arduino
+    // Arduino Gas Sensor System - Charge credentials depuis fichier de config
+    loadArduinoTwilioConfig();
     setupArduinoConnection();
 
     // Initialisation pour matériel
@@ -846,20 +846,43 @@ void smart_creation::sendWelcomeMessage(int phone_int, const QString& name) {
 void smart_creation::onTwilioReplyFinished(QNetworkReply *reply) {
     qDebug() << "=== RÉPONSE TWILIO ===";
 
-    if (reply->error() == QNetworkReply::NoError) {
-        QString response = QString(reply->readAll());
-        qDebug() << "✅ SUCCÈS - SMS Twilio envoyé!";
+    // Lire la réponse complète de Twilio
+    QString response = QString(reply->readAll());
+    int statusCode = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
 
-        // Afficher un message à l'utilisateur
-        QMessageBox::information(this, "SMS envoyé", "Message de bienvenue envoyé avec succès!");
+    qDebug() << "📊 Code HTTP:" << statusCode;
+    qDebug() << "📄 Réponse complète:" << response;
+
+    if (reply->error() == QNetworkReply::NoError && statusCode >= 200 && statusCode < 300) {
+        qDebug() << "✅ SUCCÈS - Requête acceptée par Twilio";
+
+        // Vérifier si la réponse contient un SID (indique un message créé)
+        if (response.contains("\"sid\"")) {
+            qDebug() << "✅ Message créé avec succès dans Twilio";
+            // NE PAS afficher de MessageBox ici pour éviter trop de popups
+        } else {
+            qDebug() << "⚠️ Requête acceptée mais pas de SID dans la réponse";
+        }
 
     } else {
         qDebug() << "❌ ERREUR Twilio:" << reply->errorString();
-        QString errorResponse = QString(reply->readAll());
-        qDebug() << "📄 Réponse d'erreur:" << errorResponse;
+        qDebug() << "📄 Réponse d'erreur:" << response;
+
+        // Extraire le message d'erreur de Twilio si disponible
+        QString errorMsg = reply->errorString();
+        if (response.contains("\"message\"")) {
+            int msgStart = response.indexOf("\"message\"");
+            int colonPos = response.indexOf(":", msgStart);
+            int quoteStart = response.indexOf("\"", colonPos);
+            int quoteEnd = response.indexOf("\"", quoteStart + 1);
+            if (quoteStart != -1 && quoteEnd != -1) {
+                errorMsg = response.mid(quoteStart + 1, quoteEnd - quoteStart - 1);
+            }
+        }
 
         QMessageBox::warning(this, "Erreur SMS",
-                             "Erreur lors de l'envoi du SMS: " + reply->errorString());
+                             "Erreur lors de l'envoi du SMS:\n" + errorMsg +
+                             "\n\nCode HTTP: " + QString::number(statusCode));
     }
     qDebug() << "=== FIN RÉPONSE TWILIO ===";
     reply->deleteLater();
@@ -2457,16 +2480,24 @@ void smart_creation::onSerialDataReceived()
 void smart_creation::sendSMS(const QString &phoneNumber, const QString &message)
 {
     qDebug() << "📱 Envoi SMS Arduino Gas Alert à:" << phoneNumber;
+    qDebug() << "💬 Message:" << message;
 
     // Préparer l'URL Twilio avec le nouveau Account SID
     QUrl url(QString("https://api.twilio.com/2010-04-01/Accounts/%1/Messages.json")
              .arg(arduino_twilio_account_sid));
+
+    qDebug() << "🔗 URL Twilio:" << url.toString();
+    qDebug() << "🔑 Account SID:" << arduino_twilio_account_sid;
+    qDebug() << "🔐 Auth Token:" << arduino_twilio_auth_token.left(8) + "...";
+    qDebug() << "📞 Messaging Service SID:" << arduino_twilio_messaging_service_sid;
 
     // Préparer les données POST avec MessagingServiceSid au lieu de From
     QUrlQuery postData;
     postData.addQueryItem("To", phoneNumber);
     postData.addQueryItem("MessagingServiceSid", arduino_twilio_messaging_service_sid);
     postData.addQueryItem("Body", message);
+
+    qDebug() << "📤 POST Data:" << postData.toString(QUrl::FullyEncoded);
 
     // Préparer la requête avec les nouveaux credentials Arduino
     QNetworkRequest request(url);
@@ -2475,11 +2506,12 @@ void smart_creation::sendSMS(const QString &phoneNumber, const QString &message)
     request.setRawHeader("Authorization", "Basic " + authData);
     request.setHeader(QNetworkRequest::ContentTypeHeader, "application/x-www-form-urlencoded");
 
-    qDebug() << "🔑 Utilisation Account SID:" << arduino_twilio_account_sid;
-    qDebug() << "📞 Messaging Service SID:" << arduino_twilio_messaging_service_sid;
+    qDebug() << "✅ Requête Twilio prête à être envoyée!";
 
     // Envoyer la requête
     networkManager->post(request, postData.toString(QUrl::FullyEncoded).toUtf8());
+
+    qDebug() << "📡 Requête envoyée, en attente de réponse...";
 }
 
 /**

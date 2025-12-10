@@ -153,11 +153,11 @@ private:
     bool isTunisianMobileNumber(int phone_int);
     QString convertIntToInternational(int phone_int);
 
-    // Twilio - Arduino Gas Alert (chargés depuis arduino_twilio_config.txt)
+    // Twilio - Arduino Gas Alert (credentials chargés depuis arduino_twilio_config.txt)
     QString arduino_twilio_account_sid;
     QString arduino_twilio_auth_token;
     QString arduino_twilio_messaging_service_sid;
-    void loadArduinoTwilioConfig();
+    void loadArduinoTwilioConfig();  // Charge depuis fichier arduino_twilio_config.txt
 
     //personnel
     QString emailRecup;
