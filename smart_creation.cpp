@@ -1862,9 +1862,9 @@ void smart_creation::on_btntri_clicked()
         orderBy = "V.DATE_VD DESC";
 
     query.prepare("SELECT V.ID_VID, V.NOM_VID, V.CATEGORIE_VID, V.NB_VUE_VID, V.NB_LIKE_VID, "
-                  "TO_CHAR(V.DATE_VD, 'DD/MM/YYYY'), V.COUT_VID, P.ID_INFL"
+                  "TO_CHAR(V.DATE_VD, 'DD/MM/YYYY'), V.COUT_VID, P.ID_INFL "
                   "FROM VIDEO V "
-                  "LEFT JOIN PRODUIRE P ON V.ID_VID = P.ID_VD"
+                  "LEFT JOIN PRODUIRE P ON V.ID_VID = P.ID_VD "
                   "ORDER BY " + orderBy);
 
     if(!query.exec())
@@ -1949,8 +1949,8 @@ void smart_creation::on_pushButton_75_clicked()
     // Statistiques des vidéos par catégorie
     QSqlQuery query;
     query.prepare("SELECT V.CATEGORIE_VID, COUNT(*) as NOMBRE, "
-                  "SUM(V.NB_VUE_VID) as TOTAL_VUES, "
-                  "SUM(V.NB_LIKE_VID) as TOTAL_LIKES, "
+                  "SUM(TO_NUMBER(V.NB_VUE_VID)) as TOTAL_VUES, "
+                  "SUM(TO_NUMBER(V.NB_LIKE_VID)) as TOTAL_LIKES, "
                   "SUM(V.COUT_VID) as TOTAL_COUT "
                   "FROM VIDEO V "
                   "GROUP BY V.CATEGORIE_VID "
