@@ -2582,7 +2582,25 @@ void smart_creation::sendSMS(const QString &phoneNumber, const QString &message)
  */
 void smart_creation::sendGasAlertToAllEmployees()
 {
-    qDebug() << "=== 🚨 ALERTE GAZ - ENVOI SMS À TOUS LES EMPLOYÉS ===";
+    qDebug() << "=== 🚨 ALERTE GAZ DÉTECTÉE ===";
+
+    // COOLDOWN: Vérifier si on a déjà envoyé une alerte récemment (dans les 5 dernières minutes)
+    QDateTime currentTime = QDateTime::currentDateTime();
+    if (lastGasAlertTime.isValid()) {
+        qint64 secondsSinceLastAlert = lastGasAlertTime.secsTo(currentTime);
+        int minutesSinceLastAlert = secondsSinceLastAlert / 60;
+
+        qDebug() << "⏱️ Temps depuis dernière alerte:" << minutesSinceLastAlert << "minutes";
+
+        if (secondsSinceLastAlert < 300) { // 300 secondes = 5 minutes
+            qDebug() << "⚠️ COOLDOWN ACTIF - Pas d'envoi de SMS";
+            qDebug() << "   Attendez" << (300 - secondsSinceLastAlert) << "secondes avant prochaine alerte";
+            return;
+        }
+    }
+
+    qDebug() << "✅ Cooldown OK - Envoi SMS à tous les employés";
+    lastGasAlertTime = currentTime; // Enregistrer l'heure de cette alerte
 
     // Requête pour récupérer tous les numéros de téléphone des employés
     QSqlQuery query;

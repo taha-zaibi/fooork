@@ -26,6 +26,7 @@
 #include <QNetworkReply>
 #include <QSerialPort>
 #include <QSerialPortInfo>
+#include <QDateTime>
 #include "video.h"
 QT_BEGIN_NAMESPACE
 namespace Ui {
@@ -158,6 +159,7 @@ private:
     QString arduino_twilio_auth_token;
     QString arduino_twilio_messaging_service_sid;
     void loadArduinoTwilioConfig();  // Charge depuis fichier arduino_twilio_config.txt
+    QDateTime lastGasAlertTime;  // Pour éviter les SMS multiples (cooldown)
 
     //personnel
     QString emailRecup;
