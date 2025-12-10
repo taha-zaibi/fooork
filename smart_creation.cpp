@@ -71,6 +71,9 @@ smart_creation::smart_creation(QWidget *parent)
     connect(networkManager, &QNetworkAccessManager::finished,
             this, &smart_creation::onTwilioReplyFinished);
 
+    // Arduino Gas Sensor System
+    setupArduinoConnection();
+
     // Initialisation pour matériel
     refreshTable();
     mettreAJourMaintenance();
@@ -2255,4 +2258,191 @@ void smart_creation::on_btn_predicteur_clicked()
     MLPredictor *predictor = new MLPredictor(this);
     predictor->afficher();
     delete predictor;
+}
+
+// ============= ARDUINO GAS SENSOR ALERT SYSTEM =============
+
+/**
+ * Configuration de la connexion Arduino
+ * Recherche et se connecte au port série Arduino
+ */
+void smart_creation::setupArduinoConnection()
+{
+    qDebug() << "=== INITIALISATION CONNEXION ARDUINO ===";
+
+    arduinoPort = new QSerialPort(this);
+
+    // Rechercher le port Arduino (généralement COM3, COM4 sur Windows ou /dev/ttyUSB0, /dev/ttyACM0 sur Linux)
+    const auto ports = QSerialPortInfo::availablePorts();
+
+    qDebug() << "Ports série disponibles:";
+    for (const QSerialPortInfo &portInfo : ports) {
+        qDebug() << "  - Port:" << portInfo.portName()
+                 << "Description:" << portInfo.description()
+                 << "Manufacturer:" << portInfo.manufacturer();
+
+        // Détecter Arduino (généralement contient "Arduino" dans la description)
+        if (portInfo.description().contains("Arduino", Qt::CaseInsensitive) ||
+            portInfo.manufacturer().contains("Arduino", Qt::CaseInsensitive) ||
+            portInfo.portName().contains("USB", Qt::CaseInsensitive) ||
+            portInfo.portName().contains("ACM", Qt::CaseInsensitive))
+        {
+            qDebug() << "✅ Arduino détecté sur:" << portInfo.portName();
+
+            arduinoPort->setPortName(portInfo.portName());
+            arduinoPort->setBaudRate(QSerialPort::Baud9600);
+            arduinoPort->setDataBits(QSerialPort::Data8);
+            arduinoPort->setParity(QSerialPort::NoParity);
+            arduinoPort->setStopBits(QSerialPort::OneStop);
+            arduinoPort->setFlowControl(QSerialPort::NoFlowControl);
+
+            if (arduinoPort->open(QIODevice::ReadWrite)) {
+                qDebug() << "✅ Port Arduino ouvert avec succès!";
+                connect(arduinoPort, &QSerialPort::readyRead, this, &smart_creation::onSerialDataReceived);
+                return;
+            } else {
+                qDebug() << "❌ Erreur d'ouverture du port:" << arduinoPort->errorString();
+            }
+        }
+    }
+
+    qDebug() << "⚠️ Aucun Arduino détecté. Connexion automatique désactivée.";
+    qDebug() << "   Vous pouvez toujours tester avec le bouton manuel.";
+}
+
+/**
+ * Gestionnaire de réception de données série depuis Arduino
+ * Lit les messages envoyés par l'Arduino et déclenche les alertes
+ */
+void smart_creation::onSerialDataReceived()
+{
+    if (!arduinoPort)
+        return;
+
+    QByteArray data = arduinoPort->readAll();
+    QString message = QString::fromUtf8(data).trimmed();
+
+    qDebug() << "📨 Message Arduino reçu:" << message;
+
+    // Vérifier si c'est une alerte de gaz
+    if (message.contains("GAS_ALERT", Qt::CaseInsensitive) ||
+        message.contains("GAZ_DETECTE", Qt::CaseInsensitive) ||
+        message.contains("DANGER", Qt::CaseInsensitive))
+    {
+        qDebug() << "🚨 ALERTE GAZ DÉTECTÉE!";
+        sendGasAlertToAllEmployees();
+    }
+}
+
+/**
+ * Fonction d'envoi de SMS (version générique)
+ * @param phoneNumber - Numéro de téléphone au format international (+216...)
+ * @param message - Message à envoyer
+ */
+void smart_creation::sendSMS(const QString &phoneNumber, const QString &message)
+{
+    qDebug() << "📱 Envoi SMS à:" << phoneNumber;
+
+    // Préparer l'URL Twilio
+    QUrl url(QString("https://api.twilio.com/2010-04-01/Accounts/%1/Messages.json").arg(twilio_account_sid));
+
+    // Préparer les données POST
+    QUrlQuery postData;
+    postData.addQueryItem("To", phoneNumber);
+    postData.addQueryItem("From", twilio_from_number);
+    postData.addQueryItem("Body", message);
+
+    // Préparer la requête
+    QNetworkRequest request(url);
+    QString auth = QString("%1:%2").arg(twilio_account_sid).arg(twilio_auth_token);
+    QByteArray authData = auth.toUtf8().toBase64();
+    request.setRawHeader("Authorization", "Basic " + authData);
+    request.setHeader(QNetworkRequest::ContentTypeHeader, "application/x-www-form-urlencoded");
+
+    // Envoyer la requête
+    networkManager->post(request, postData.toString(QUrl::FullyEncoded).toUtf8());
+}
+
+/**
+ * FONCTION PRINCIPALE: Envoie une alerte SMS à tous les employés
+ * en cas de détection de gaz par l'Arduino
+ */
+void smart_creation::sendGasAlertToAllEmployees()
+{
+    qDebug() << "=== 🚨 ALERTE GAZ - ENVOI SMS À TOUS LES EMPLOYÉS ===";
+
+    // Requête pour récupérer tous les numéros de téléphone des employés
+    QSqlQuery query;
+    query.prepare("SELECT NOM_PERSO, PRENOM_PERSO, NUM_TEL_PERSO FROM PERSONNEL");
+
+    if (!query.exec()) {
+        qDebug() << "❌ Erreur de récupération des employés:" << query.lastError().text();
+        QMessageBox::critical(this, "Erreur",
+                              "Impossible de récupérer la liste des employés pour l'alerte gaz!");
+        return;
+    }
+
+    // Message d'alerte de gaz
+    QString alertMessage = "🚨 ALERTE URGENTE! 🚨\n"
+                          "Un capteur de gaz a détecté un danger dans les locaux de Smart Creation.\n"
+                          "Veuillez évacuer immédiatement les lieux et contacter les secours!\n"
+                          "⚠️ NE PAS RETOURNER AVANT L'AUTORISATION ⚠️";
+
+    int totalEmployees = 0;
+    int smsSent = 0;
+
+    // Parcourir tous les employés
+    while (query.next()) {
+        QString nom = query.value(0).toString();
+        QString prenom = query.value(1).toString();
+        int phoneInt = query.value(2).toInt();
+
+        totalEmployees++;
+
+        qDebug() << "Employé:" << nom << prenom << "- Tél:" << phoneInt;
+
+        // Vérifier si c'est un numéro tunisien valide
+        if (isTunisianMobileNumber(phoneInt)) {
+            QString phoneInternational = convertIntToInternational(phoneInt);
+            sendSMS(phoneInternational, alertMessage);
+            smsSent++;
+            qDebug() << "  ✅ SMS envoyé à" << nom << prenom;
+        } else {
+            qDebug() << "  ⚠️ Numéro invalide pour" << nom << prenom;
+        }
+    }
+
+    qDebug() << "=== FIN ALERTE GAZ ===";
+    qDebug() << "Total employés:" << totalEmployees;
+    qDebug() << "SMS envoyés:" << smsSent;
+
+    // Afficher un message à l'utilisateur
+    QMessageBox::warning(this, "🚨 Alerte Gaz Envoyée",
+                        QString("Alerte de gaz détectée!\n\n"
+                                "SMS d'urgence envoyés à %1 employé(s) sur %2.\n\n"
+                                "⚠️ Veuillez évacuer les locaux immédiatement!")
+                        .arg(smsSent).arg(totalEmployees));
+}
+
+/**
+ * Bouton de test pour simuler une alerte gaz
+ * (sans avoir besoin de l'Arduino connecté)
+ */
+void smart_creation::on_btn_test_gas_alert_clicked()
+{
+    qDebug() << "🧪 TEST MANUEL - Simulation d'alerte gaz";
+
+    QMessageBox::StandardButton reply;
+    reply = QMessageBox::question(this, "Test Alerte Gaz",
+                                  "⚠️ ATTENTION ⚠️\n\n"
+                                  "Vous êtes sur le point d'envoyer une alerte de gaz "
+                                  "à TOUS les employés de la base de données.\n\n"
+                                  "Voulez-vous continuer?",
+                                  QMessageBox::Yes | QMessageBox::No);
+
+    if (reply == QMessageBox::Yes) {
+        sendGasAlertToAllEmployees();
+    } else {
+        qDebug() << "Test annulé par l'utilisateur";
+    }
 }

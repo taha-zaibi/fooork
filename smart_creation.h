@@ -24,6 +24,8 @@
 #include <QSqlError>
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
+#include <QSerialPort>
+#include <QSerialPortInfo>
 #include "video.h"
 QT_BEGIN_NAMESPACE
 namespace Ui {
@@ -117,6 +119,11 @@ private slots:
     void on_pushButton_75_clicked();
     void on_btn_roi_clicked();
     void on_btn_predicteur_clicked();
+
+    // Arduino - Gas Sensor Alert
+    void onSerialDataReceived();
+    void on_btn_test_gas_alert_clicked();
+
 private:
     Ui::smart_creation *ui;
     influenceur inf;
@@ -157,9 +164,12 @@ private:
     void configurerConnexions();
     void chargerVideoDuTableau(int row);
 
-
-
-
+    // Arduino - Gas Sensor System
+    QSerialPort *arduinoPort;
+    void setupArduinoConnection();
+    void sendGasAlertToAllEmployees();
+    void sendSMS(const QString &phoneNumber, const QString &message);
 };
+
 
 #endif // SMART_CREATION_H
