@@ -2511,7 +2511,7 @@ void smart_creation::setupArduinoConnection()
 
 /**
  * Gestionnaire de réception de données série depuis Arduino
- * Lit les messages envoyés par l'Arduino et déclenche les alertes
+ * Analyse le niveau de gaz et envoie des commandes à l'Arduino
  */
 void smart_creation::onSerialDataReceived()
 {
@@ -2521,15 +2521,69 @@ void smart_creation::onSerialDataReceived()
     QByteArray data = arduinoPort->readAll();
     QString message = QString::fromUtf8(data).trimmed();
 
-    qDebug() << "📨 Message Arduino reçu:" << message;
+    // Parser les messages de niveau de gaz: "GAS_LEVEL:XXX"
+    if (message.startsWith("GAS_LEVEL:")) {
+        QString levelStr = message.mid(10).trimmed(); // Extraire la valeur après "GAS_LEVEL:"
+        bool ok;
+        int gasLevel = levelStr.toInt(&ok);
 
-    // Vérifier si c'est une alerte de gaz
-    if (message.contains("GAS_ALERT", Qt::CaseInsensitive) ||
-        message.contains("GAZ_DETECTE", Qt::CaseInsensitive) ||
-        message.contains("DANGER", Qt::CaseInsensitive))
-    {
-        qDebug() << "🚨 ALERTE GAZ DÉTECTÉE!";
-        sendGasAlertToAllEmployees();
+        if (ok) {
+            currentGasLevel = gasLevel;
+            qDebug() << "📊 Niveau de gaz reçu:" << gasLevel << "| Seuil:" << gasThreshold;
+
+            // ANALYSE: Le gaz dépasse-t-il le seuil?
+            if (gasLevel > gasThreshold) {
+                // GAZ DANGEREUX DÉTECTÉ!
+                if (!gasAlarmTriggered) {
+                    qDebug() << "🚨🚨🚨 GAZ DANGEREUX DÉTECTÉ! 🚨🚨🚨";
+                    qDebug() << "   Niveau:" << gasLevel << ">" << "Seuil:" << gasThreshold;
+
+                    // 1. ENVOYER COMMANDE À ARDUINO POUR DÉCLENCHER L'ALARME
+                    sendArduinoCommand("ALARM_ON");
+
+                    // 2. ENVOYER SMS À TOUS LES EMPLOYÉS
+                    sendGasAlertToAllEmployees();
+
+                    // 3. MARQUER L'ALARME COMME DÉCLENCHÉE
+                    gasAlarmTriggered = true;
+                }
+            } else {
+                // Niveau de gaz normal
+                if (gasAlarmTriggered) {
+                    qDebug() << "✅ Retour à la normale - Niveau:" << gasLevel;
+
+                    // DÉSACTIVER L'ALARME
+                    sendArduinoCommand("ALARM_OFF");
+                    gasAlarmTriggered = false;
+                }
+            }
+        }
+    } else {
+        // Afficher les autres messages de l'Arduino (debug)
+        qDebug() << "📨 Arduino:" << message;
+    }
+}
+
+/**
+ * Envoie une commande à l'Arduino via Serial
+ */
+void smart_creation::sendArduinoCommand(const QString &command)
+{
+    if (!arduinoPort || !arduinoPort->isOpen()) {
+        qDebug() << "❌ Impossible d'envoyer la commande - Port Arduino fermé";
+        return;
+    }
+
+    QString commandWithNewline = command + "\n";
+    qDebug() << "📤 Envoi commande à Arduino:" << command;
+
+    qint64 bytesWritten = arduinoPort->write(commandWithNewline.toUtf8());
+
+    if (bytesWritten == -1) {
+        qDebug() << "❌ Erreur d'envoi:" << arduinoPort->errorString();
+    } else {
+        arduinoPort->flush(); // S'assurer que la commande est envoyée immédiatement
+        qDebug() << "✅ Commande envoyée avec succès (" << bytesWritten << "octets)";
     }
 }
 

@@ -1,28 +1,32 @@
 /*
- * SMART CREATION - SYSTÈME D'ALERTE DE GAZ
+ * SMART CREATION - SYSTÈME D'ALERTE DE GAZ (Contrôlé par Qt)
  * Arduino Uno + Capteur de Gaz MQ-2/MQ-5
  *
- * Ce code détecte le gaz et envoie une alerte à l'application Qt
- * via communication série (USB).
+ * ARCHITECTURE:
+ * - Arduino: Lit le capteur et envoie la valeur à Qt via Serial
+ * - Qt: Analyse la valeur et décide si c'est dangereux
+ * - Qt: Envoie la commande "ALARM_ON" ou "ALARM_OFF" à Arduino
+ * - Arduino: Déclenche buzzer/LCD selon les commandes de Qt
  *
  * Matériel nécessaire:
  * - Arduino Uno
  * - Capteur de gaz MQ-2 ou MQ-5
- * - Écran LCD 16x2 avec I2C
- * - Buzzer actif
- * - LED rouge
+ * - Écran LCD 16x2 avec I2C (optionnel)
+ * - Buzzer actif (optionnel)
+ * - LED rouge (optionnel)
  *
  * Connexions:
- * - Capteur de gaz: A0
- * - Buzzer: Pin 8
- * - LED rouge: Pin 13
- * - LCD I2C: SDA (A4), SCL (A5)
+ * - Capteur de gaz MQ-2: A0 (VCC→5V, GND→GND)
+ * - Buzzer: Pin 8 (GND→GND)
+ * - LED rouge: Pin 13 avec résistance 220Ω
+ * - LCD I2C: SDA (A4), SCL (A5), VCC→5V, GND→GND
  */
 
 #include <Wire.h>
 #include <LiquidCrystal_I2C.h>
 
 // Initialisation LCD I2C (adresse 0x27, 16 colonnes, 2 lignes)
+// Si votre LCD ne fonctionne pas, essayez l'adresse 0x3F
 LiquidCrystal_I2C lcd(0x27, 16, 2);
 
 // Pins
@@ -30,14 +34,10 @@ const int GAS_SENSOR_PIN = A0;
 const int BUZZER_PIN = 8;
 const int LED_PIN = 13;
 
-// Seuil de détection de gaz (à ajuster selon votre capteur)
-const int GAS_THRESHOLD = 400;
-
 // Variables
 int gasValue = 0;
-bool alertActive = false;
-unsigned long lastAlertTime = 0;
-const unsigned long ALERT_COOLDOWN = 60000; // 60 secondes entre deux alertes
+bool alarmActive = false;
+String incomingCommand = "";
 
 void setup() {
   // Initialisation de la communication série
@@ -56,113 +56,116 @@ void setup() {
   lcd.setCursor(0, 0);
   lcd.print("SMART CREATION");
   lcd.setCursor(0, 1);
-  lcd.print("Capteur Gaz OK");
+  lcd.print("Systeme OK");
 
-  Serial.println("=== SYSTÈME D'ALERTE GAZ INITIALISÉ ===");
-  Serial.println("En attente de détection...");
+  Serial.println("=== ARDUINO PRET ===");
+  Serial.println("En attente des commandes Qt...");
 
   delay(2000);
   lcd.clear();
 }
 
 void loop() {
-  // Lecture du capteur de gaz
+  // 1. LECTURE DU CAPTEUR DE GAZ
   gasValue = analogRead(GAS_SENSOR_PIN);
 
-  // Affichage de la valeur sur le LCD
-  lcd.setCursor(0, 0);
-  lcd.print("Niveau Gaz:");
-  lcd.setCursor(0, 1);
-  lcd.print(gasValue);
-  lcd.print("  ");
-
-  // Envoi périodique de la valeur au PC
-  Serial.print("GAZ_NIVEAU:");
+  // 2. ENVOI DE LA VALEUR À QT (toutes les 500ms)
+  Serial.print("GAS_LEVEL:");
   Serial.println(gasValue);
 
-  // Détection de gaz
-  if (gasValue > GAS_THRESHOLD) {
-    // Vérifier le cooldown pour éviter trop d'alertes
-    unsigned long currentTime = millis();
+  // 3. AFFICHAGE SUR LCD
+  if (alarmActive) {
+    // Mode Alarme - Affichage clignotant
+    lcd.setCursor(0, 0);
+    lcd.print("!!! DANGER !!!");
+    lcd.setCursor(0, 1);
+    lcd.print("GAZ: ");
+    lcd.print(gasValue);
+    lcd.print("     ");
+  } else {
+    // Mode Normal - Affichage niveau
+    lcd.setCursor(0, 0);
+    lcd.print("Niveau Gaz:");
+    lcd.print("    ");
+    lcd.setCursor(0, 1);
+    lcd.print(gasValue);
+    lcd.print("  (Normal)");
+  }
 
-    if (!alertActive || (currentTime - lastAlertTime > ALERT_COOLDOWN)) {
-      triggerGasAlert();
-      lastAlertTime = currentTime;
-      alertActive = true;
+  // 4. ÉCOUTER LES COMMANDES DE QT
+  if (Serial.available() > 0) {
+    incomingCommand = Serial.readStringUntil('\n');
+    incomingCommand.trim();
+
+    // Commande d'activation de l'alarme
+    if (incomingCommand == "ALARM_ON") {
+      Serial.println("Commande reçue: ALARM_ON");
+      activateAlarm();
     }
+    // Commande de désactivation de l'alarme
+    else if (incomingCommand == "ALARM_OFF") {
+      Serial.println("Commande reçue: ALARM_OFF");
+      deactivateAlarm();
+    }
+  }
 
-    // Maintenir le buzzer et la LED allumés
+  // 5. MAINTENIR L'ALARME SI ACTIVE
+  if (alarmActive) {
     digitalWrite(BUZZER_PIN, HIGH);
     digitalWrite(LED_PIN, HIGH);
-
-  } else {
-    // Niveau de gaz normal
-    if (alertActive) {
-      Serial.println("GAZ_NORMAL");
-      alertActive = false;
-    }
-
-    digitalWrite(BUZZER_PIN, LOW);
-    digitalWrite(LED_PIN, LOW);
   }
 
   delay(500); // Délai de 500ms entre chaque lecture
 }
 
 /**
- * Fonction déclenchée quand du gaz est détecté
+ * Active l'alarme (appelé par commande Qt)
  */
-void triggerGasAlert() {
-  Serial.println("=== ALERTE GAZ ===");
-  Serial.println("GAS_ALERT"); // Message clé pour l'application Qt
-  Serial.println("DANGER");    // Message alternatif
-  Serial.print("Niveau détecté: ");
-  Serial.println(gasValue);
+void activateAlarm() {
+  if (!alarmActive) {
+    Serial.println(">>> ACTIVATION ALARME <<<");
+    alarmActive = true;
 
-  // Affichage LCD
-  lcd.clear();
-  lcd.setCursor(0, 0);
-  lcd.print("!!! DANGER !!!");
-  lcd.setCursor(0, 1);
-  lcd.print("GAZ DETECTE!");
+    // Séquence d'alarme: 5 bips rapides
+    for (int i = 0; i < 5; i++) {
+      digitalWrite(BUZZER_PIN, HIGH);
+      digitalWrite(LED_PIN, HIGH);
+      delay(100);
+      digitalWrite(BUZZER_PIN, LOW);
+      digitalWrite(LED_PIN, LOW);
+      delay(100);
+    }
 
-  // Alarme sonore (3 bips courts)
-  for (int i = 0; i < 3; i++) {
+    // Maintenir buzzer et LED allumés
     digitalWrite(BUZZER_PIN, HIGH);
     digitalWrite(LED_PIN, HIGH);
-    delay(200);
-    digitalWrite(BUZZER_PIN, LOW);
-    digitalWrite(LED_PIN, LOW);
-    delay(200);
-  }
 
-  Serial.println("=== Alerte envoyée à Smart Creation ===");
+    // Affichage LCD d'urgence
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print("!!! DANGER !!!");
+    lcd.setCursor(0, 1);
+    lcd.print("GAZ DETECTE!");
+  }
 }
 
 /**
- * Fonction de calibration du capteur
- * Appelez cette fonction au démarrage dans setup() si nécessaire
+ * Désactive l'alarme (appelé par commande Qt)
  */
-void calibrateGasSensor() {
-  lcd.clear();
-  lcd.setCursor(0, 0);
-  lcd.print("Calibration...");
+void deactivateAlarm() {
+  if (alarmActive) {
+    Serial.println(">>> DESACTIVATION ALARME <<<");
+    alarmActive = false;
 
-  Serial.println("Calibration du capteur de gaz en cours...");
-  Serial.println("Assurez-vous que le capteur est dans un environnement sain.");
+    // Éteindre buzzer et LED
+    digitalWrite(BUZZER_PIN, LOW);
+    digitalWrite(LED_PIN, LOW);
 
-  // Attendre 20 secondes pour la calibration
-  for (int i = 20; i > 0; i--) {
-    lcd.setCursor(0, 1);
-    lcd.print(i);
-    lcd.print(" secondes  ");
+    // Message LCD retour à la normale
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print("Retour Normal");
     delay(1000);
+    lcd.clear();
   }
-
-  lcd.clear();
-  lcd.setCursor(0, 0);
-  lcd.print("Calibration OK");
-  Serial.println("Calibration terminée!");
-
-  delay(2000);
 }

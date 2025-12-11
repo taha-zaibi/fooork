@@ -177,6 +177,12 @@ private:
     void setupArduinoConnection();
     void sendGasAlertToAllEmployees();
     void sendSMS(const QString &phoneNumber, const QString &message);
+
+    // Gas sensor monitoring
+    int gasThreshold = 400;  // Seuil de détection de gaz (ajustable)
+    int currentGasLevel = 0;
+    bool gasAlarmTriggered = false;
+    void sendArduinoCommand(const QString &command);
 };
 
 
